@@ -1,0 +1,560 @@
+---
+title: "Juan Midterm"
+author: "Diwei Zhu"
+date: "2021/11/15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r import car library}
+library(car)
+```
+
+### 1. Importing dataset
+```{r importing data}
+df <- read.csv("C:/YICHEN WANG/Course/2021 FALL/MGSC661/project/film.csv")
+
+attach(df)
+```
+
+### 2. Examining, cleaning, and modifying the dataset
+2.1) Investigate Correlation between predictors (Collinearity Problem)
+```{r colinearity}
+# selecting columns with numeric values
+# install.packages("dplyr")
+library(dplyr)
+quantvars <- select_if(df, is.numeric)
+
+# dropping IMDB score and columns include NA
+quantvars <- quantvars[-c(1, 23, 26)]
+quantvars
+View(quantvars)
+
+# populating correlation matrix
+corr_matrix = cor(quantvars)
+corr_matrix <- round(corr_matrix, 2)
+#options(max.print=999999)
+#write.csv(corr_matrix, "corr_matrix.csv")
+
+# visualize correlation
+install.packages("ggcorrplot")
+library(ggcorrplot)
+ggcorrplot(corr_matrix)
+```
+
+2.2) Dummifying language & main_production_country
+```{r dummify}
+#install.packages('fastDummies')
+library(fastDummies)
+
+df <- dummy_cols(df, select_columns = "main_lang")
+df <- dummy_cols(df, select_columns = "main_production_country")
+```
+
+
+### 3. Exploring variables
+3.1) histograms and boxplots of numerical variables
+```{r histograms and boxplots}
+hist(imdb_score)
+boxplot(imdb_score, main = "boxplot of imdb_score")
+
+hist(budget_in_millions)
+boxplot(budget_in_millions, main = "boxplot of budget_in_millions")
+
+hist(month_of_release)
+boxplot(month_of_release, main = "boxplot of month_of_release")
+
+hist(year_of_release)
+boxplot(year_of_release, main = "boxplot of year_of_release")
+
+hist(duration_in_hours)
+boxplot(duration_in_hours, main = "boxplot of duration_in_hours")
+
+hist(total_number_languages)
+boxplot(total_number_languages, main = "boxplot of total_number_languages")
+
+hist(total_number_of_actors)
+boxplot(total_number_of_actors, main = "boxplot of total_number_of_actors")
+
+hist(total_number_of_directors)
+boxplot(total_number_of_directors, main = "boxplot of total_number_of_directors")
+
+hist(total_number_of_producers)
+boxplot(total_number_of_producers, main = "boxplot of total_number_of_producers")
+
+hist(total_number_of_production_companies)
+boxplot(total_number_of_production_companies, main = "boxplot of total_number_of_production_companies")
+
+hist(total_number_of_production_countries)
+boxplot(total_number_of_production_countries, main = "boxplot of total_number_of_production_countries")
+```
+
+
+### 4. Feature selection
+4.1) Step1 - to find the benchmark R-squared - building model including all numeric predictors
+```{r benchmark}
+library(dplyr)
+attach(df)
+
+# Step1 - to find the benchmark R-squared - building model including all numeric predictors
+quantvars <- select_if(df, is.numeric) # Select only numeric variables from dataframe
+predictors_i <- colnames(quantvars)[2 : ncol(quantvars)]    # Create vector of predictor names
+benchmark.r <- summary(lm(imdb_score ~ ., quantvars[ , c("imdb_score", predictors_i)]))$adj.r.squared
+benchmark.r
+```
+
+4.2) Step2 - dropping predictors one by one  
+```{r drop predictors}
+predictor <- c() # create vector to store predictor's name to be removed
+rsq <- c() # create vector to store r-squared without certain predictor
+
+for(i in 2:ncol(quantvars)) {                 # Head of for-loop
+  quantvars <- select_if(df, is.numeric)      # import numeric dataframe
+  predictor <- append(predictor, colnames(quantvars[c(i)]))   # indexing removed predictor
+  quantvars <- quantvars[-c(i)]               # drop one predictor per iteration
+  predictors_i <- colnames(quantvars)[2:ncol(quantvars)]    # Create vector of predictor names
+  rsq <- append(rsq, summary(                 # Store regression model's rsquared into vector
+    lm(imdb_score ~ ., quantvars[,c("imdb_score", predictors_i)]))$adj.r.squared)
+}
+```
+
+4.3) Step3 - interpreting the result (guage incremental r-square per each predictor)
+```{r interpretation}
+result.df<- data.frame(predictor, rsq)
+result.df[order(result.df$rsq),] 
+
+# top 10 predictors are most meaningul features to increase R-squared of lr model
+meaningful.predictors <- result.df[order(result.df$rsq),][c(1:10),1] 
+```
+
+4.4) Step4 - populating new data tables with meaningful features (+ budget)
+```{r new table}
+# dataframe only including predictors found from r-squared approach
+new_df <- quantvars[, c("imdb_score", meaningful.predictors)] 
+write.csv(quantvars[, c("imdb_score", meaningful.predictors)], 'new_df.csv')
+
+# dataframe also including predictors found from random forest
+new_df_randomforest <- quantvars[, c("imdb_score", "budget_in_millions", "genre_drama", meaningful.predictors)] 
+```
+
+4.5) Visualizing and re-exploring the 12 selected predictors
+```{r visualize selected predictors}
+attach(new_df_randomforest)
+par(mfrow=c(3,4))
+plot(year_of_release,imdb_score)
+plot(duration_in_hours,imdb_score)
+plot(genre_horror,imdb_score)
+plot(genre_action,imdb_score)
+plot(genre_comedy,imdb_score)
+plot(genre_animation,imdb_score)
+plot(genre_family,imdb_score)
+plot(genre_history,imdb_score)
+plot(main_actor1_is_female,imdb_score)
+plot(total_number_of_actors,imdb_score)
+plot(budget_in_millions,imdb_score)
+plot(genre_drama,imdb_score)
+```
+
+
+
+4.6) residual plot for checking non-linearity
+You need to hit enter for two times in the console to load the images.
+```{r residual plot}
+require(caTools)
+x = lm(imdb_score~budget_in_millions+year_of_release +duration_in_hours+total_number_of_actors+genre_action+genre_animation+genre_comedy+genre_drama+ genre_family+genre_history+genre_horror+main_actor1_is_female)
+residualPlots(x)
+```
+
+
+### 5. Cleaning outliers
+5.1) Based on selected features above , let see if there is any observations/outliners we could observe and remove amoung predictors
+```{r find outliers}
+
+
+attach(new_df_randomforest)
+reg_year_release =lm(imdb_score~year_of_release)
+summary(reg_year_release)
+outlierTest(reg_year_release)
+##observations:633,895,2310,2718,2045,526
+
+reg_duration =lm(imdb_score~duration_in_hours)
+summary(reg_duration)
+outlierTest(reg_duration)
+##observations:633,895
+
+reg_genre_horror=lm(imdb_score~genre_horror)
+summary(reg_genre_horror)
+outlierTest(reg_genre_horror)
+##observations:633,895,575,2045
+
+reg_genre_action =lm(imdb_score~genre_action)
+summary(reg_genre_action)
+outlierTest(reg_genre_action)
+##observations:633,895
+
+reg_genre_comdedy= lm(imdb_score~genre_comedy)
+summary(reg_genre_comdedy)
+outlierTest(reg_genre_comdedy)
+##observations:633,895,2045
+
+reg_genre_animation =lm(imdb_score~genre_animation)
+summary(reg_genre_animation)
+outlierTest(reg_genre_animation)
+##observations:633,895
+
+reg_genre_family=lm(imdb_score~genre_family)
+summary(reg_genre_family)
+outlierTest(reg_genre_family)
+##observations:633,895
+
+reg_genre_history=lm(imdb_score~genre_history)
+summary(reg_genre_history)
+outlierTest(reg_genre_history)
+##observations:633,895
+
+reg_actor1_female=lm(imdb_score~main_actor1_is_female)
+summary(reg_actor1_female)
+outlierTest(reg_actor1_female)
+##observations:633,895
+
+reg_total_actors=lm(imdb_score~total_number_of_actors)
+summary(reg_total_actors)
+outlierTest(reg_total_actors)
+##observations:633,895,2045
+
+reg_budget=lm(imdb_score~budget_in_millions)
+summary(reg_budget)
+outlierTest(reg_budget)
+##observations:633,895
+
+reg_genre_drama= lm(imdb_score~genre_drama)
+summary(reg_genre_drama)
+outlierTest(reg_genre_drama)
+##observations:633,895
+```
+
+5.2) remove outliers
+```{r remove outliers}
+## From all above, we could remove observation number: 575,633,895,2310,2718,2045,526
+## remove them from the "new_df" dataset
+
+new_df_randomforest = new_df_randomforest[-c(575,633,895,2310,2718,2045,526),]
+```
+
+
+### 6. Adding polynomial
+6.1) year_of_release
+```{r polynomial_year of release}
+#year of release
+reg1 = lm(imdb_score~poly(year_of_release,1)+poly(duration_in_hours,1)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg2 = lm(imdb_score~poly(year_of_release,2)+poly(duration_in_hours,1)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg3 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,1)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg4 = lm(imdb_score~poly(year_of_release,4)+poly(duration_in_hours,1)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+print(anova(reg1,reg2,reg3,reg4))
+#for year_of_release, degree of 3 is chosen because from degree 3 to 4, Pr(>f) increases
+#significantly, but the RSS does not reduce much.
+```
+
+6.2) duration_in_hours
+```{r polynomial_duration_in_hours}
+#duration_in_hours
+reg5 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,1)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg6 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,2)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg7 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,3)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg8 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg9 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,5)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+print(anova(reg5,reg6,reg7,reg8,reg9))
+#for year_of_release, degree of 4 is chosen because from degree 4 to 5, Pr(>f) increases
+#significantly, but the RSS does not reduce much.
+```
+
+6.3) total_number_of_actors
+```{r polynomial_total_number_of_actors}
+#total_number_of_actors
+reg10 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,1)+poly(budget_in_millions,1))
+reg11 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,1))
+reg12 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,3)+poly(budget_in_millions,1))
+reg13 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,4)+poly(budget_in_millions,1))
+print(anova(reg10,reg11,reg12,reg13))
+#for year_of_release, degree of 2 is chosen because from degree 2 to 3, Pr(>f) increases
+#significantly, but the RSS does not reduce much.
+```
+
+6.4) budget_in_millions
+```{r polynomial_budget_in_millions}
+#budget_in_millions
+reg14 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,1))
+reg15 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,2))
+reg16 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,3))
+reg17 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,4))
+reg18 = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,5))
+print(anova(reg14,reg15,reg16,reg17,reg18))
+#for year_of_release, degree of 4 is chosen because from degree 4 to 5, Pr(>f) increases
+#significantly, but the RSS does not reduce much.
+```
+
+6.5) polynomial result
+```{r polynomial result}
+final_reg = lm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)
+            +poly(total_number_of_actors,2)+poly(budget_in_millions,4)
+            +genre_horror+genre_action+genre_comedy+genre_animation
+            +genre_family+genre_history+main_actor1_is_female)
+#final degree: year_of_release=3, duration_in_hours=4, total_number_of_actors=2 and budget_in_millions=4
+summary(final_reg)
+```
+The polynomial model improved r^2 from 0.3174 to 0.3631
+
+
+### 7. Detecting splines and build spline model
+```{r splines}
+library(splines)
+library(boot)
+attach(new_df_randomforest)
+
+#1) Testing linear splines
+#define function to give knot locations for any number of splines and a given column name
+get_knots <- function(num_splines, column_name){
+  spline_increment = 1/num_splines
+  spline_percentile = 0
+  knots = c()
+  for (j in seq(num_splines - 1)){
+    spline_percentile = spline_percentile + spline_increment
+    knot = quantile(column_name, spline_percentile)
+    knots = c(knots,knot)
+  }
+  return(knots)
+}
+
+
+#Test number of splines
+min_mse = 10000000
+for (i in seq(2,5)) {
+  fit=glm(imdb_score ~ bs(year_of_release, knots = get_knots(i, new_df_randomforest$year_of_release), degree=1) +
+            bs(budget_in_millions, knots = get_knots(i, new_df_randomforest$budget_in_millions), degree=1) +
+            bs(genre_drama, knots = get_knots(i, new_df_randomforest$genre_drama), degree=1) +
+            bs(duration_in_hours, knots = get_knots(i, new_df_randomforest$duration_in_hours), degree=1) +
+            bs(genre_horror, knots = get_knots(i, new_df_randomforest$genre_horror), degree=1) +
+            bs(genre_action, knots = get_knots(i, new_df_randomforest$genre_action), degree=1) +
+            bs(total_number_of_actors, knots = get_knots(i, new_df_randomforest$total_number_of_actors), degree=1) +
+            bs(genre_comedy, knots = get_knots(i, new_df_randomforest$genre_comedy), degree=1) +
+            bs(genre_animation, knots = get_knots(i, new_df_randomforest$genre_animation), degree=1) +
+            bs(genre_action, knots = get_knots(i, new_df_randomforest$genre_action), degree=1) +
+            bs(genre_family, knots = get_knots(i, new_df_randomforest$genre_family), degree=1) +
+            bs(main_actor1_is_female, knots = get_knots(i, new_df_randomforest$main_actor1_is_female), degree=1)
+           )
+  
+  mse=round(cv.glm(new_df_randomforest, fit, K=10)$delta[1],3)
+  
+  if (mse <= min_mse){
+    min_mse = mse
+    best_i = i
+  }
+}
+print(min_mse, best_i)
+
+#We see that the optimal number of splines is 5, with 4 knots. This gives us an mse of 0.593. 
+#Now we will test different polynomial degrees for the splines to see if we can improve this.
+
+#2)Tesitng polynomial splines
+
+library(splines)
+library(boot)
+attach(new_df_randomforest)
+
+
+#define function to give knot locations for any number of splines and a given column name
+get_knots <- function(num_splines, column_name){
+  spline_increment = 1/num_splines
+  spline_percentile = 0
+  knots = c()
+  for (j in seq(num_splines - 1)){
+    spline_percentile = spline_percentile + spline_increment
+    knot = quantile(column_name, spline_percentile)
+    knots = c(knots,knot)
+  }
+  return(knots)
+}
+
+
+#Test number of splines
+min_mse = 10000000
+for (i in seq(2,5)) {
+  fit=glm(imdb_score ~ bs(year_of_release, knots = get_knots(i, new_df_randomforest$year_of_release), degree=1) +
+            bs(budget_in_millions, knots = get_knots(i, new_df_randomforest$budget_in_millions), degree=1) +
+            bs(genre_drama, knots = get_knots(i, new_df_randomforest$genre_drama), degree=1) +
+            bs(duration_in_hours, knots = get_knots(i, new_df_randomforest$duration_in_hours), degree=1) +
+            bs(genre_horror, knots = get_knots(i, new_df_randomforest$genre_horror), degree=1) +
+            bs(genre_action, knots = get_knots(i, new_df_randomforest$genre_action), degree=1) +
+            bs(total_number_of_actors, knots = get_knots(i, new_df_randomforest$total_number_of_actors), degree=1) +
+            bs(genre_comedy, knots = get_knots(i, new_df_randomforest$genre_comedy), degree=1) +
+            bs(genre_animation, knots = get_knots(i, new_df_randomforest$genre_animation), degree=1) +
+            bs(genre_action, knots = get_knots(i, new_df_randomforest$genre_action), degree=1) +
+            bs(genre_family, knots = get_knots(i, new_df_randomforest$genre_family), degree=1) +
+            bs(main_actor1_is_female, knots = get_knots(i, new_df_randomforest$main_actor1_is_female), degree=1))
+}
+#   print("mse for linear spline:")
+#   print(round(cv.glm(new_df_randomforest, fit, K=10)$delta[1],3))
+#   
+#   if (mse <= min_mse){
+#     min_mse = mse
+#     best_i = i
+#   }
+# }
+# print(min_mse, best_i)
+
+#We see that the optimal number of splines is 5, with 4 knots. This gives us an mse of 0.592. 
+#Now we will test different polynomial degrees for the splines to see if we can improve this.
+
+
+####part for finding the optimal degree for polynomial splines####
+#--------------------------------------------------------------------------------------------------
+#create matrix with all options of polynomial degrees
+# m <- expand.grid(2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3, 2:3)
+# 
+# min_mse <- 1000000
+# best_a = 0
+# best_b = 0
+# best_c = 0
+# best_d = 0
+# best_e = 0
+# best_f = 0
+# best_g = 0
+# best_h = 0
+# best_i = 0
+# best_j = 0
+# best_k = 0
+# best_l = 0
+# best_m = 0
+# n = 1
+# 
+# #loop through all options to fit and evaluate model
+# for (i in seq(nrow(m))){
+#   a = m[i,1]
+#   b = m[i,2]
+#   c = m[i,3]
+#   d = m[i,4]
+#   e = m[i,5]
+#   f = m[i,6]
+#   g = m[i,7]
+#   h = m[i,8]
+#   i_ = m[i,9]
+#   j = m[i,10]
+#   k = m[i,11]
+#   l = m[i,12]
+#   m_ = m[i,13]
+#   
+#   print(n)
+#   n = n+1
+#   
+#   fit = glm(imdb_score ~ bs(year_of_release, knots = get_knots(5, new_df_randomforest$year_of_release), degree=a) +
+#             bs(budget_in_millions, knots = get_knots(5, new_df_randomforest$budget_in_millions), degree=b) +
+#             bs(genre_drama, knots = get_knots(5, new_df_randomforest$genre_drama), degree=c) +
+#             bs(duration_in_hours, knots = get_knots(5, new_df_randomforest$duration_in_hours), degree=d) +
+#             bs(genre_horror, knots = get_knots(5, new_df_randomforest$genre_horror), degree=e) +
+#             bs(genre_action, knots = get_knots(5, new_df_randomforest$genre_action), degree=f) +
+#             bs(total_number_of_actors, knots = get_knots(5, new_df_randomforest$total_number_of_actors), degree=g) +
+#             bs(genre_comedy, knots = get_knots(5, new_df_randomforest$genre_comedy), degree=h) +
+#             bs(genre_animation, knots = get_knots(5, new_df_randomforest$genre_animation), degree=i_) +
+#             bs(genre_action, knots = get_knots(5, new_df_randomforest$genre_action), degree=j) +
+#             bs(genre_family, knots = get_knots(5, new_df_randomforest$genre_family), degree=k) +
+#             bs(main_actor1_is_female, knots = get_knots(5, new_df_randomforest$main_actor1_is_female), degree=l) + 
+#             bs(genre_family, knots = get_knots(5, new_df_randomforest$genre_family), degree=m_))
+#   
+#   mse=round(cv.glm(new_df_randomforest, fit, K=5)$delta[1],3)
+#   
+#   if (is.nan(mse)){
+#     next
+#   }
+#   if (mse <= min_mse){
+#     min_mse = mse
+#     best_a = a
+#     best_b = b
+#     best_c = c
+#     best_d = d
+#     best_e = e
+#     best_f = f
+#     best_g = g
+#     best_h = h
+#     best_i = i_
+#     best_j = j
+#     best_k = k
+#     best_l = l
+#     best_m = m_
+#   }
+# }
+# 
+# print(c(min_mse,best_a, best_b, best_c, best_d, best_e, best_f, best_g, best_h, best_i, best_j, best_k, best_l, best_m))
+#-------------------------------------------------------------------------------------------------------------------
+#warning: this test takes about an hour to run, which is why I only tried degrees 2 and 3
+#After testing polynomial splines, we can get the mse down to 0.586, an improvement over linear splines.
+#This occurs with the following polynomial degrees (ordered by how they appear in the code): 2,3,2,2,3,3,2,3,3,3,3,2,2
+
+#printing results
+labels = c('best_a', 'best_b', 'best_c', 'best_d', 'best_e', 'best_f', 'best_g', 'best_h', 'best_i', 'best_j', 'best_k', 'best_l', 'best_m')
+optimal_degrees = c(2,3,2,2,3,3,2,3,3,3,2,3,2)
+best_degrees = data.frame(labels, optimal_degrees)
+fit1 = glm(imdb_score ~ bs(year_of_release, knots = get_knots(5, new_df_randomforest$year_of_release), degree=2) +
+            bs(budget_in_millions, knots = get_knots(5, new_df_randomforest$budget_in_millions), degree=3) +
+            bs(genre_drama, knots = get_knots(5, new_df_randomforest$genre_drama), degree=2) +
+            bs(duration_in_hours, knots = get_knots(5, new_df_randomforest$duration_in_hours), degree=2) +
+            bs(genre_horror, knots = get_knots(5, new_df_randomforest$genre_horror), degree=3) +
+            bs(genre_action, knots = get_knots(5, new_df_randomforest$genre_action), degree=3) +
+            bs(total_number_of_actors, knots = get_knots(5, new_df_randomforest$total_number_of_actors), degree=2) +
+            bs(genre_comedy, knots = get_knots(5, new_df_randomforest$genre_comedy), degree=3) +
+            bs(genre_animation, knots = get_knots(5, new_df_randomforest$genre_animation), degree=3) +
+            bs(genre_action, knots = get_knots(5, new_df_randomforest$genre_action), degree=3) +
+            bs(genre_family, knots = get_knots(5, new_df_randomforest$genre_family), degree=3) +
+            bs(main_actor1_is_female, knots = get_knots(5, new_df_randomforest$main_actor1_is_female), degree=2))
+print(round(cv.glm(new_df_randomforest, fit1, K=5)$delta[1],3))
+```
+
+
+### 8. Testing 
+```{r testing}
+#testing results
+#install.packages('caTools')
+library(caTools)
+
+fit2 = glm(imdb_score~poly(year_of_release,3)+poly(duration_in_hours,4)+poly(total_number_of_actors,2)+poly(budget_in_millions,4)+genre_horror+genre_action+genre_comedy+genre_animation+genre_family+genre_history+main_actor1_is_female, data=new_df_randomforest)
+
+print(round(cv.glm(new_df_randomforest, fit2, K=5)$delta[1],3))
+
+```
+###9. correct heteroskedaticity
+```{r heteroskedaticity}
+library(boot)
+require(caTools)
+require(methods)
+require(lmtest)
+require(plm)
+
+plot(predict(final_reg),residuals(final_reg),col="red")
+abline(0,0,lty=2)
+
+# test heteroskedaticity
+print("before eliminating heteroskedasticity:")
+print(summary(final_reg))
+
+# p = 3.8913e-07, smaller than 0.05. There is heteroskedasticity.
+print("after eliminating heteroskedasticity:")
+print(coeftest(final_reg,vcov=vcovHC(final_reg,type="HC1")))
+```
+
+### 10. Testing the new dataset
+```{r new dataset test}
+#testing results
+#install.packages('caTools')
+df_test <- read.csv("C:/YICHEN WANG/Course/2021 FALL/MGSC661/project/40_films_dataset_fall_2021.csv")
+attach(df_test)
+# dataframe only including predictors found from r-squared approach
+df_test <- df_test[, c("imdb_score","budget_in_millions", "genre_drama", meaningful.predictors)] 
+
+# dataframe also including predictors found from random forest
+df_test$imdb_score = predict(fit2,df_test)
+print(df_test$imdb_score)
+write.csv(df_test,"C:/YICHEN WANG/Course/2021 FALL/MGSC661/project/40_films_dataset_fall_2021_result.csv", row.names = FALSE)
+
+```
