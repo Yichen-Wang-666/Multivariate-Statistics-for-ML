@@ -1,0 +1,141 @@
+---
+title: "Final_project"
+author: "YICHEN"
+date: "10/12/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load in data}
+df <- read.csv("C:/YICHEN WANG/Course/2021 FALL/MGSC661/final project/heart.csv")
+attach(df)
+```
+
+```{r data exploration}
+library(ggplot2)
+hist_fn = function(varname) {
+  ggplot(data = df,
+         aes(x = {{varname}})) +
+    geom_histogram(stat = 'count') +
+    labs(title = "Variable distribution",
+         y = "Frequency")
+}
+hist_fn(RestingBP)
+hist_fn(Cholesterol) 
+hist_fn(MaxHR)
+hist_fn(Oldpeak)
+hist_fn(Age)
+hist_fn(Sex)
+hist_fn(ChestPainType)
+hist_fn(FastingBS)
+hist_fn(RestingECG)
+hist_fn(ExerciseAngina)
+hist_fn(ST_Slope)
+hist_fn(HeartDisease)
+
+```
+
+```{r dummify}
+#install.packages('fastDummies')
+library(fastDummies)
+
+df <- dummy_cols(df, select_columns = "Sex")
+df <- dummy_cols(df, select_columns = "ChestPainType")
+df <- dummy_cols(df, select_columns = "RestingECG")
+df <- dummy_cols(df, select_columns = "ExerciseAngina")
+df <- dummy_cols(df, select_columns = "ST_Slope")
+```
+
+```{r data exploration}
+library(dplyr)
+df <- select_if(df, is.numeric)
+#View(quantvars)
+# populating correlation matrix
+corr_matrix = cor(df)
+corr_matrix <- round(corr_matrix, 2)
+
+# visualize correlation
+install.packages("ggcorrplot")
+library(ggcorrplot)
+ggcorrplot(corr_matrix)
+```
+```{r drop columns}
+df = subset(df, select = -c(ST_Slope_Up,Sex_F,ExerciseAngina_N) )
+```
+
+```{r feature importance, fig.width = 6, fig.asp = 0.8}
+#feature importance
+#install.packages("randomForest")
+library(randomForest)
+rfImp <- randomForest(HeartDisease ~ ., data = df,
+                       ntree = 10000,
+                       importance = TRUE)
+importance(rfImp)
+varImpPlot(rfImp)
+```
+
+
+```{r view pca}
+labels = df[,c(7)]
+vars = df[,c(1:18)]
+pca = prcomp(vars,scale=TRUE)
+```
+
+```{r plot the 2d with autoplot()}
+#install.packages("ggfortify")
+library(ggfortify)
+
+autoplot(pca,data=vars,loadings=TRUE,
+         col = ifelse(labels==1,"green","blue"),loadings.label=TRUE)
+```
+
+
+### 4.
+```{r percentage of variance}
+pve = (pca$sdev^2)/sum(pca$sdev^2)
+par(mfrow=c(1,2))
+plot(pve,ylim=c(0,1))
+plot(cumsum(pve),ylim=c(0,1))
+
+```
+```{r data split}
+require(caTools)
+require(methods)
+sample = sample.split(df$HeartDisease,SplitRatio=0.7)
+train = subset(df,sample==TRUE)
+test=subset(df,sample==FALSE)
+```
+
+```{r regression}
+fit = glm(HeartDisease ~ ChestPainType_ASY +FastingBS +ST_Slope_Flat+Oldpeak+Cholesterol+ExerciseAngina_Y, data = train, family = "binomial")
+
+test$pred <- predict(fit,test)
+test$pred <- ifelse(test$pred > 0, 1,0)
+table(test$HeartDisease,test$pred)
+accuracy = sum(ifelse(test$pred ==  test$HeartDisease, 1, 0))/ length(test$pred)
+mse = mean((test$pred-test$HeartDisease)^2)
+accuracy
+mse
+```
+
+
+```{r boosted forest}
+library(gbm)
+set.seed(1)
+
+boosted = gbm(HeartDisease ~ ChestPainType_ASY +FastingBS +ST_Slope_Flat+Oldpeak+Cholesterol+MaxHR,data=df,distribution = "bernoulli",n.trees = 1000, interaction.depth=4)
+```
+
+```{r prediction accuracy comparison}
+predicted_score=predict(boosted, newdata=df, n.trees=1000, type="response")
+predicted_score = ifelse(predicted_score>0.5, 1, 0)
+table(predicted_score,HeartDisease)
+accuracy = sum(ifelse(predicted_score ==  df$HeartDisease, 1, 0))/ length(predicted_score)
+mse = mean((predicted_score-HeartDisease)^2)
+accuracy
+mse
+
+```
